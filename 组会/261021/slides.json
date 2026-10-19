@@ -9,10 +9,26 @@
   },
   {
     "paper": "Agent Lightning v1.0",
+    "kind": "研究背景",
+    "title": "训练循环的控制权，发生了变化",
+    "body": "<figure><button class=\"figure-button\" data-image=\"assets/l-paradigm.png\" aria-label=\"放大图片：Figure 2 · Traditional 与 Harnessed Agentic RL\"><img src=\"assets/l-paradigm.png\" alt=\"Figure 2 · Traditional 与 Harnessed Agentic RL\"></button><figcaption>Figure 2 · Traditional 与 Harnessed Agentic RL · 点击放大</figcaption></figure><div class=\"cards\"><article><span class=\"card-no\">01</span><h3>传统范式</h3><p>trainer 组织动作与环境反馈，token 历史持续追加，通常一次 rollout 对应一条线性训练序列。</p></article><article><span class=\"card-no\">02</span><h3>Harness 范式</h3><p>harness 独立构造每次 prompt，负责工具、压缩、子智能体与恢复；trainer 只观察 API 调用。</p></article></div>",
+    "source": "[L] pp.2–3, Fig.2, Eqs.1–6",
+    "notes": "两种范式都可以用 POMDP 描述。后者的隐状态同时包括 harness 与环境；模型只能看到每次实际提交的 prompt。"
+  },
+  {
+    "paper": "Agent Lightning v1.0",
     "kind": "问题与核心",
     "title": "接上模型 API，就能正确训练吗？",
     "body": "<div class=\"cards\"><article><span class=\"card-no\">01</span><h3>问题</h3><p>harness 掌控交互；训练器只看到一系列模型请求与回答。</p></article><article><span class=\"card-no\">02</span><h3>难点</h3><p>一次任务会分支、压缩上下文，也可能被拆成多个训练样本。</p></article><article><span class=\"card-no\">03</span><h3>核心</h3><p>保留真实采样条件，并以 rollout 作为优势与归一化的统计单位。</p></article></div><p class=\"takeaway\">一次任务执行（rollout） ≠ 一条训练序列（sample）</p>",
     "source": "[L] pp.2–3, §§1–2",
+    "notes": ""
+  },
+  {
+    "paper": "Agent Lightning v1.0",
+    "kind": "挑战地图",
+    "title": "四项挑战，贯穿一条训练链",
+    "body": "<div class=\"flow\"><span>模型调用 → 样本</span><b>→</b><span>奖励 → 优势</span><b>→</b><span>token 损失 → 权重</span><b>→</b><span>动态样本 → GPU</span></div><div class=\"cards\"><article><span class=\"card-no\">01</span><h3>01 / 02：数据与统计</h3><p>文本重分词可能破坏合并条件；同一任务切成多段会重复计入组内奖励统计。</p></article><article><span class=\"card-no\">02</span><h3>03 / 04：目标与调度</h3><p>按 token、sample 或 rollout 平均会改变任务权重；动态样本还必须映射到固定并行后端。</p></article></div><p class=\"takeaway\">同一个 rollout ID，要同时贯穿数据构造、统计归属与参数更新。</p>",
+    "source": "[L] §2.1–2.4",
     "notes": ""
   },
   {
@@ -25,11 +41,35 @@
   },
   {
     "paper": "Agent Lightning v1.0",
+    "kind": "系统设计 · 组件",
+    "title": "三个组件，协调一次完整任务",
+    "body": "<div class=\"table-wrap\"><table><thead><tr><th>组件</th><th>输入与职责</th><th>向下游交付</th></tr></thead><tbody><tr><td>API Gateway</td><td>保存 rollout 状态与事件；代理模型 API</td><td>精确 token、log probability、调用与奖励记录</td></tr><tr><td>Rollout Controller</td><td>轮询期望状态，启动本地进程或 K8S Job</td><td>外部 harness 的执行状态与日志</td></tr><tr><td>Customized Trainer</td><td>注册模型与任务；等待完成并读取事件</td><td>Sample Adapter 构造样本，随后优化参数</td></tr></tbody></table></div><p class=\"takeaway\">Gateway 是生命周期状态的事实来源；Controller 用 reconciliation loop 驱动执行。</p>",
+    "source": "[L] §3, Appendix A",
+    "notes": "本地进程池与 Kubernetes 是可替换的执行后端。控制 API 幂等，执行控制采用尽力而为的最终一致性。"
+  },
+  {
+    "paper": "Agent Lightning v1.0",
+    "kind": "系统设计 · 运行",
+    "title": "同一组 GPU，交替服务采样与更新",
+    "body": "<figure><button class=\"figure-button\" data-image=\"assets/l-scheduling.png\" aria-label=\"放大图片：Figure 6 · 同步、异步与同卡异步\"><img src=\"assets/l-scheduling.png\" alt=\"Figure 6 · 同步、异步与同卡异步\"></button><figcaption>Figure 6 · 同步、异步与同卡异步 · 点击放大</figcaption></figure><div class=\"flow\"><span>积累足量已完成 rollout</span><b>→</b><span>暂停接收新推理，排空在途请求</span><b>→</b><span>共享 GPU 更新权重</span><b>→</b><span>恢复请求与采样</span></div><p class=\"takeaway\">不必等待整批最慢任务完成；harness 的下一次请求由 Gateway 暂停与恢复。</p>",
+    "source": "[L] §3.1, Fig.6",
+    "notes": "同卡异步通过时间复用共享 GPU，不表示推理与更新在同一 GPU 上无条件同时执行。跨阶段长任务带来的策略版本仍需记录。约 2× 是论文配置下的结果。"
+  },
+  {
+    "paper": "Agent Lightning v1.0",
     "kind": "关键细节 01",
     "title": "文本相同，不代表 token 相同",
     "body": "<figure><button class=\"figure-button\" aria-label=\"放大图片：Figure 3 · 重新分词改变 token 边界\" data-image=\"assets/l-token.png\"><img src=\"assets/l-token.png\" alt=\"Figure 3 · 重新分词改变 token 边界\"></button><figcaption>Figure 3 · 重新分词改变 token 边界 · 点击放大</figcaption></figure><div class=\"cards\"><article><span class=\"card-no\">01</span><h3>风险</h3><p>把下一次提示强行换成旧 token，会改变真实采样条件。</p></article><article><span class=\"card-no\">02</span><h3>处理</h3><p>只在精确 token 前缀匹配时合并；不匹配就开启新样本。</p></article></div><p class=\"takeaway\">合并率不是目标：先保证条件正确，再复用计算。</p>",
     "source": "[L] pp.3–6 §2.1, Fig.3",
     "notes": "论文称条件不一致为 off-policy stitching；它不同于普通的行为策略落后于当前策略。独立训练保留真实条件，但会重复计算共享前缀。"
+  },
+  {
+    "paper": "Agent Lightning v1.0",
+    "kind": "挑战 01 · 成因与边界",
+    "title": "为什么重新分词会改变训练条件？",
+    "body": "<div class=\"cards\"><article><span class=\"card-no\">01</span><h3>模板并非可拼接</h3><p>对完整对话重新套 chat template，可能增删分隔符或历史 &lt;think&gt; 标记。</p></article><article><span class=\"card-no\">02</span><h3>Decode → Tokenize 漂移</h3><p>同一 having 可由 h + aving 或 hav + ing 组成；文本一致并不保证 token ID 一致。</p></article><article><span class=\"card-no\">03</span><h3>输出后处理</h3><p>工具协议可能修复、规范化并重新序列化 JSON，使下一次上下文连文本都发生变化。</p></article></div><div class=\"formula compact\">(pᵢ, aᵢ) ⪯ pᵢ₊₁ <span class=\"eq-note\">仅当精确 token 前缀成立，才安全合并</span></div><p class=\"takeaway\">强换成缓存 token 会改变下一条动作的条件，形成 off-policy stitching。</p>",
+    "source": "[L] §2.1, Eqs.9–14",
+    "notes": "独立训练每次调用保证其采样条件，但重复计算前缀。论文选择保守合并；这里的偏差来自条件拼接，不只是策略参数陈旧。"
   },
   {
     "paper": "Agent Lightning v1.0",
@@ -41,11 +81,43 @@
   },
   {
     "paper": "Agent Lightning v1.0",
+    "kind": "挑战 02 · 处理方法",
+    "title": "优势在 rollout 层计算，再广播给样本",
+    "body": "<figure><button class=\"figure-button\" data-image=\"assets/l-advantage.png\" aria-label=\"放大图片：Figure 4 · 一个 rollout 可以展开成多个样本\"><img src=\"assets/l-advantage.png\" alt=\"Figure 4 · 一个 rollout 可以展开成多个样本\"></button><figcaption>Figure 4 · 一个 rollout 可以展开成多个样本 · 点击放大</figcaption></figure><div class=\"formula compact\">Aρ = (Rρ − μg) / (σg + ε)</div><div class=\"flow\"><span>同题多次 rollout</span><b>→</b><span>每次奖励只统计一次</span><b>→</b><span>计算组内 μg、σg</span><b>→</b><span>各 sample 继承 Aρ</span></div><p class=\"takeaway\">避免“切得越多，越影响基线”；它还没有解决分支之间的细粒度信用分配。</p>",
+    "source": "[L] §2.2, Fig.4 · 公式为组相对优势的记号化说明",
+    "notes": "g 为同一 prompt 的 rollout 组；ε 是数值稳定项。所有样本继承同一 rollout 优势是本文设计选择。"
+  },
+  {
+    "paper": "Agent Lightning v1.0",
     "kind": "关键细节 03",
     "title": "损失平均方式，会改变任务权重",
     "body": "<div class=\"table-wrap\"><table><thead><tr><th>归一化单位</th><th>rollout A</th><th>rollout B</th><th>rollout C</th></tr></thead><tbody><tr><td>全部 token</td><td>150 / 280</td><td>90 / 280</td><td>40 / 280</td></tr><tr><td>每条 sample</td><td>2 / 6</td><td>3 / 6</td><td>1 / 6</td></tr><tr><td>每次 rollout</td><td><strong>1 / 3</strong></td><td><strong>1 / 3</strong></td><td><strong>1 / 3</strong></td></tr></tbody></table></div><p class=\"takeaway\">论文采用：rollout 内按生成 token 平均，再跨 rollout 平均。</p><p class=\"small\">同一批数据：A / B / C 分别有 2 / 3 / 1 个样本，生成长度为 150 / 90 / 40。</p>",
     "source": "[L] pp.7–9 §2.3, Fig.5",
     "notes": "仅优化模型生成 token，不训练环境观察。token 等权会让长 rollout 更重；sample 等权会让切分更多的任务更重。"
+  },
+  {
+    "paper": "Agent Lightning v1.0",
+    "kind": "挑战 03 · 目标公式",
+    "title": "先在任务内部平均，再在任务之间平均",
+    "body": "<figure><button class=\"figure-button\" data-image=\"assets/l-normalization.png\" aria-label=\"放大图片：Figure 5 · 不同切分数量与生成长度\"><img src=\"assets/l-normalization.png\" alt=\"Figure 5 · 不同切分数量与生成长度\"></button><figcaption>Figure 5 · 不同切分数量与生成长度 · 点击放大</figcaption></figure><div class=\"formula compact\">L = (1 / |B|) Σρ [ (1 / Tρ) Σⱼ Σₜ mρⱼₜ ℓρⱼₜ ]</div><div class=\"cards\"><article><span class=\"card-no\">01</span><h3>Tρ 统计什么？</h3><p>该 rollout 所有样本中参与优化的生成 token 数；prompt 与环境观察不参与动作损失。</p></article><article><span class=\"card-no\">02</span><h3>改变切分不改变权重</h3><p>同一任务从一段拆成三段，仍只占一个 rollout 的平均权重；长短任务也保持任务等权。</p></article></div>",
+    "source": "[L] §2.3, Eqs.15–16, Fig.5 · 公式为等价记号",
+    "notes": "B 是 rollout batch，m 是生成 token mask。此目标是论文选择，不是任何任务都必须使用的唯一归一化。"
+  },
+  {
+    "paper": "Agent Lightning v1.0",
+    "kind": "挑战 04 · 问题",
+    "title": "样本数未知，GPU 并行配置却固定",
+    "body": "<div class=\"flow\"><span>固定数量的任务</span><b>→</b><span>harness 完成执行</span><b>→</b><span>才知道 sample 数和长度</span><b>→</b><span>分配至固定 GPU workers</span></div><div class=\"cards\"><article><span class=\"card-no\">01</span><h3>工作量难预估</h3><p>压缩与子智能体会改变样本数；相同 rollout 数不能保证相同 token 量或显存需求。</p></article><article><span class=\"card-no\">02</span><h3>更新边界不能随意切</h3><p>若同一 rollout 的不同片段进入两次 optimizer update，它们会在不同策略参数下被评估。</p></article></div><p class=\"takeaway\">调度既要均衡 token 工作量，也要保留 rollout 的统计与更新边界。</p>",
+    "source": "[L] §2.4, Eq.17",
+    "notes": ""
+  },
+  {
+    "paper": "Agent Lightning v1.0",
+    "kind": "挑战 04 · 约束",
+    "title": "物理打包可以变，统计归属不能变",
+    "body": "<div class=\"formula compact\">Sρ,ⱼ → (sample, rollout_id = ρ, prompt_group_id = gρ)</div><div class=\"table-wrap\"><table><thead><tr><th>调度环节</th><th>必须保留的语义</th></tr></thead><tbody><tr><td>Flatten / packing</td><td>展平后仍能追溯所属 rollout 与 prompt group</td></tr><tr><td>Data parallel / micro-batch</td><td>按 token 负载分配；保持正确的 rollout 权重</td></tr><tr><td>Optimizer update</td><td>一个 rollout 的全部样本进入同一次参数更新</td></tr></tbody></table></div><p class=\"takeaway\">同一次 update 可以有多个 micro-batch；micro-batch 与 optimizer update 不是一回事。</p>",
+    "source": "[L] §2.4, Eq.17",
+    "notes": "这里归纳论文对训练后端的要求，不声称本文提出了全新的最优负载均衡算法。"
   },
   {
     "paper": "Agent Lightning v1.0",
@@ -105,6 +177,30 @@
   },
   {
     "paper": "ARLArena / SAMPO",
+    "kind": "训练策略对照",
+    "title": "这些方法，各自在改什么？",
+    "body": "<div class=\"table-wrap\"><table><thead><tr><th>策略</th><th>相对基础 GRPO 的主要变化</th><th>需要观察</th></tr></thead><tbody><tr><td>GRPO-ST</td><td>每段先按 token 平均，再对段平均</td><td>短长段的相对权重</td></tr><tr><td>SAPO / CISPO</td><td>软裁剪 / 截断 IS 权重并 stop-gradient</td><td>越界负优势样本是否仍贡献更新</td></tr><tr><td>GSPO</td><td>以长度归一的序列比率控制更新</td><td>整段策略偏离</td></tr><tr><td>DAPO</td><td>动态过滤与重采样，非对称裁剪</td><td>有效组比例及额外采样成本</td></tr><tr><td>GiGPO / EMPG</td><td>全局加局部优势 / 熵调节优势</td><td>步骤信用与不确定性</td></tr></tbody></table></div>",
+    "source": "[A] Table 1, Appendix A",
+    "notes": "此表是设计维度对照，不表示论文中的组合实验只更改表内单一超参数。"
+  },
+  {
+    "paper": "ARLArena / SAMPO",
+    "kind": "研究维度 · 聚合与过滤",
+    "title": "权重如何分配？哪些组还有学习信号？",
+    "body": "<div class=\"formula compact\">Lseq = (1/N) Σᵢ (1/Tᵢ) Σₜ ℓᵢₜ<br>Ltoken = Σᵢ Σₜ ℓᵢₜ / Σᵢ Tᵢ</div><div class=\"cards\"><article><span class=\"card-no\">01</span><h3>聚合：短段与长段</h3><p>这里 i 是分解后的单轮生成序列。sequence mean 令每段等权；token mean 令所有有效 token 等权。</p></article><article><span class=\"card-no\">02</span><h3>过滤：组内相对差异</h3><p>同题 G 条 rollout 若终局奖励全相同，组相对优势可能退化。动态采样优先保留有成败差异的组。</p></article></div><p class=\"takeaway\">与 Lightning 的 rollout 等权目标不同：先明确 i 对应什么统计单位。</p>",
+    "source": "[A] §2.2, Eqs.4–7; [L] §2.3",
+    "notes": "SAMPO 采用 token mean。全失败组仍可能有格式惩罚差异，不应把任何失败数据都等同于无学习信号。"
+  },
+  {
+    "paper": "ARLArena / SAMPO",
+    "kind": "研究维度 · 比率与优势",
+    "title": "更新幅度与步骤贡献，分别如何刻画？",
+    "body": "<div class=\"formula compact\">wᵢₜ = πθ(yᵢₜ | hᵢₜ) / πold(yᵢₜ | hᵢₜ)<br>A′ᵢ,ₖ = Aᵢ + ω Astep(ŷᵢ,ₖ)</div><div class=\"cards\"><article><span class=\"card-no\">01</span><h3>IS 比率</h3><p>描述当前策略相对采样策略的概率变化；裁剪用于限制不可信的大幅更新。</p></article><article><span class=\"card-no\">02</span><h3>优势</h3><p>Aᵢ 比较整条任务回报；局部项比较相同前置状态下的动作，为步骤提供额外区分。</p></article></div><p class=\"takeaway\">同一个失败任务中，也可能有值得保留的好步骤。</p>",
+    "source": "[A] §2.2, Table 1, Appendix A.2–A.3",
+    "notes": "h 表示生成该 token 时的真实上下文。局部优势来自可比较状态的分组，不是增加人工步骤标签。"
+  },
+  {
+    "paper": "ARLArena / SAMPO",
     "kind": "关键发现 01",
     "title": "崩溃前，哪些信号一起变化？",
     "body": "<figure><button class=\"figure-button\" aria-label=\"放大图片：Figure 2 · 成功率、两类 KL、梯度范数与格式有效率\" data-image=\"assets/a-dynamics.png\"><img src=\"assets/a-dynamics.png\" alt=\"Figure 2 · 成功率、两类 KL、梯度范数与格式有效率\"></button><figcaption>Figure 2 · 成功率、两类 KL、梯度范数与格式有效率 · 点击放大</figcaption></figure><div class=\"flow\"><span>负优势 + 低 IS 比率</span><b>→</b><span>KL / 梯度异常</span><b>→</b><span>格式有效率下降</span><b>→</b><span>成功率崩溃</span></div><p class=\"takeaway\">在这些实验中，偏离过大的负样本是重要的失稳来源。</p>",
@@ -134,6 +230,46 @@
     "body": "<div class=\"recipe\"><article><span>1</span><h3>动态过滤</h3><p>提高有效学习信号比例</p></article><b>+</b><article><span>2</span><h3>全局 + 局部优势</h3><p>兼顾任务结果与步骤贡献</p></article><b>+</b><article><span>3</span><h3>序列级裁剪</h3><p>限制策略偏移</p></article></div><p class=\"takeaway\">在标准化训练配方上，使用 token mean 聚合。</p><p class=\"small\">SAMPO = Stable Agentic Multi-turn Policy Optimization</p>",
     "source": "[A] pp.8–9 §5, Eq.8",
     "notes": "这是经过诊断的组合设计，不是引入新的奖励模型。各组件有交互，复现应同时做独立与联合消融。"
+  },
+  {
+    "paper": "ARLArena / SAMPO",
+    "kind": "SAMPO · 数据流",
+    "title": "从同题多轨迹，到一次参数更新",
+    "body": "<div class=\"flow\"><span>πold 与环境多轮交互</span><b>→</b><span>任务与格式回报</span><b>→</b><span>过滤退化组并补采样</span></div><div class=\"flow\"><span>episode + state-group 优势</span><b>→</b><span>拆成单轮序列</span><b>→</b><span>序列比率裁剪 + token mean</span></div><div class=\"cards\"><article><span class=\"card-no\">01</span><h3>训练基础</h3><p>BC 冷启动、格式约束与参考 KL 构成实验配方；这些条件先于策略组件比较。</p></article><article><span class=\"card-no\">02</span><h3>组合的原因</h3><p>过滤处理信号不足，局部优势处理信用粗糙，序列裁剪处理策略偏离。三者作用位置不同。</p></article></div>",
+    "source": "[A] §§3, 5, Eq.8 · 流程为依据原文重绘",
+    "notes": "SAMPO 是优化算法组合，不是另一个 agent 执行系统。图中“拆分”是逻辑说明，具体实现可先构造单轮数据再计算字段。"
+  },
+  {
+    "paper": "ARLArena / SAMPO",
+    "kind": "SAMPO · 组件 1",
+    "title": "过滤退化组，并补充有效交互",
+    "body": "<div class=\"formula compact\">0 &lt; #{成功 rollout} &lt; G</div><div class=\"table-wrap\"><table><thead><tr><th>同题 4 条轨迹示例</th><th>相对终局奖励信号</th><th>动态采样处理</th></tr></thead><tbody><tr><td>[1, 1, 1, 1]</td><td>全部成功，无法区分</td><td>过滤并尝试补采样</td></tr><tr><td>[0, 0, 0, 0]</td><td>全部失败，终局优势退化</td><td>过滤并尝试补采样</td></tr><tr><td>[1, 0, 1, 0]</td><td>成功与失败可形成对比</td><td>保留学习</td></tr></tbody></table></div><p class=\"takeaway\">有限次重试控制采样预算；过滤规则还需与格式奖励、局部优势一起考察。</p>",
+    "source": "[A] Eqs.7–8, §4.3, Appendix B · 二元回报示例为讲解构造",
+    "notes": "表格展示仅有二元终局奖励时的直觉。实际数据还有格式信号，论文也发现全局优势与局部优势下的过滤收益不同。"
+  },
+  {
+    "paper": "ARLArena / SAMPO",
+    "kind": "SAMPO · 组件 2",
+    "title": "同一状态下，比较不同动作的后果",
+    "body": "<div class=\"formula compact\">A′ᵢ,ₖ = Aepisode,ᵢ + ω Astep(ŷᵢ,ₖ)</div><div class=\"flow\"><span>找到相同前置环境状态</span><b>→</b><span>聚合该状态后的动作</span><b>→</b><span>比较后续回报</span><b>→</b><span>生成局部相对优势</span></div><div class=\"cards\"><article><span class=\"card-no\">01</span><h3>全局信号</h3><p>完整任务是否成功，提供整个 episode 的方向；同一条轨迹的步骤共享这个基准。</p></article><article><span class=\"card-no\">02</span><h3>局部信号</h3><p>在同一状态中比较“打开柜门”与“离开房间”等动作，增强中间步骤的信用区分。</p></article></div><p class=\"takeaway\">局部比较需要可靠的状态分组；任意文本相似并不等于相同决策状态。</p>",
+    "source": "[A] §5.2, Appendix A.3 · 柜门情境为示意",
+    "notes": "ω 控制局部优势强度。局部信号来自 GiGPO 的 state grouping；不是对每个工具调用单独训练奖励模型。"
+  },
+  {
+    "paper": "ARLArena / SAMPO",
+    "kind": "SAMPO · 组件 3",
+    "title": "用整段几何平均比率，限制策略偏离",
+    "body": "<div class=\"formula compact\">sᵢ(θ) = exp[ (1/Tᵢ) Σₜ log wᵢₜ ]</div><div class=\"formula compact\">ℓᵢₜ = min(sᵢ A′ᵢ, clip(sᵢ, 1−ε, 1+ε) A′ᵢ)</div><div class=\"cards\"><article><span class=\"card-no\">01</span><h3>长度归一</h3><p>使用平均 log-ratio 再取指数，避免直接连乘概率比随长度急剧变化。</p></article><article><span class=\"card-no\">02</span><h3>序列层约束</h3><p>同一轮生成共享序列比率，控制整段更新；最终仍以 token mean 聚合生成位置。</p></article></div><p class=\"takeaway\">它聚合了 token 偏离，并不保证每个 token 的比率都在裁剪区间内。</p>",
+    "source": "[A] §5.2, Eq.8",
+    "notes": "序列指分解后的单轮生成，不是整个多轮 episode。此处使用最大化 surrogate 的符号；最小化实现需取负号并加入配方中的正则项。"
+  },
+  {
+    "paper": "ARLArena / SAMPO",
+    "kind": "SAMPO · 完整目标",
+    "title": "三个组件，在一个目标中相遇",
+    "body": "<div class=\"formula compact\">J = [Σᵢ Σₜ min(sᵢ A′ᵢ, clip(sᵢ,1±ε) A′ᵢ)] / Σᵢ Tᵢ</div><div class=\"table-wrap\"><table><thead><tr><th>公式位置</th><th>对应设计</th><th>控制的问题</th></tr></thead><tbody><tr><td>训练组的保留条件</td><td>动态过滤 / 重采样</td><td>组内优势退化</td></tr><tr><td>A′ = Aepisode + ω Astep</td><td>全局 + 局部优势</td><td>终局回报难以区分步骤</td></tr><tr><td>sᵢ 与 clip(sᵢ)</td><td>序列级比率裁剪</td><td>过度偏离采样策略</td></tr><tr><td>分母 Σᵢ Tᵢ</td><td>token mean</td><td>明确损失聚合单位</td></tr></tbody></table></div>",
+    "source": "[A] §5.2, Eq.8",
+    "notes": "展示策略 surrogate，不将辅助参考 KL 吸收进这条式子。sequence mask 是诊断性干预，不额外列为 SAMPO 第四个核心组件。"
   },
   {
     "paper": "ARLArena / SAMPO",
@@ -169,11 +305,35 @@
   },
   {
     "paper": "AKBE",
+    "kind": "研究背景 · 现象",
+    "title": "已能回答的问题，仍可能逐渐依赖搜索",
+    "body": "<figure><button class=\"figure-button\" data-image=\"assets/k-offloading.png\" aria-label=\"放大图片：Figure 1 · 冗余调用与 cognitive offloading\"><img src=\"assets/k-offloading.png\" alt=\"Figure 1 · 冗余调用与 cognitive offloading\"></button><figcaption>Figure 1 · 冗余调用与 cognitive offloading · 点击放大</figcaption></figure><div class=\"cards\"><article><span class=\"card-no\">01</span><h3>奖励的盲点</h3><p>有工具和无工具都答对时，二元正确性奖励没有偏好；冗余搜索同样可以获得奖励。</p></article><article><span class=\"card-no\">02</span><h3>边界逐渐模糊</h3><p>反复通过搜索成功，模型可能更多地外包推理，减少调用内部知识的机会。</p></article></div><p class=\"takeaway\">图中的分析对象是早期已正确样本；不能当成全部训练集的总体比例。</p>",
+    "source": "[K] §1, Fig.1",
+    "notes": "作者用 cognitive offloading 解释所观察行为。图不能单独证明模型参数知识被遗忘。"
+  },
+  {
+    "paper": "AKBE",
     "kind": "方法概览",
     "title": "当前策略，双路径探测",
     "body": "<figure><button class=\"figure-button\" aria-label=\"放大图片：Figure 2 · 双路径探测、监督构造与联合训练\" data-image=\"assets/k-method.png\"><img src=\"assets/k-method.png\" alt=\"Figure 2 · 双路径探测、监督构造与联合训练\"></button><figcaption>Figure 2 · 双路径探测、监督构造与联合训练 · 点击放大</figcaption></figure><div class=\"flow\"><span>同一个问题</span><b>→</b><span>有工具 / 无工具采样</span><b>→</b><span>判断正确性</span><b>→</b><span>最多选择一个目标</span></div>",
     "source": "[K] pp.3–5, Algorithm 1, Fig.2",
     "notes": "WT 与 NT 表示对应路径是否至少出现一个正确样本。基础 RL 继续使用有工具轨迹，辅助监督最多每题选一条。无额外教师模型。"
+  },
+  {
+    "paper": "AKBE",
+    "kind": "架构 (a) · 双路径探测",
+    "title": "同一问题，同一当前策略，两种工具条件",
+    "body": "<figure><button class=\"figure-button\" data-image=\"assets/k-probing.png\" aria-label=\"放大图片：Figure 2(a) · Dual-Path Knowledge Boundary Probing\"><img src=\"assets/k-probing.png\" alt=\"Figure 2(a) · Dual-Path Knowledge Boundary Probing\"></button><figcaption>Figure 2(a) · Dual-Path Knowledge Boundary Probing · 点击放大</figcaption></figure><div class=\"formula compact\">WT = 𝟙[∃ 有工具轨迹答对]　 NT = 𝟙[∃ 无工具轨迹答对]</div><div class=\"cards\"><article><span class=\"card-no\">01</span><h3>With-tool：探索外部帮助</h3><p>采样 Gwt 条轨迹，保留任务奖励与调用数；这些轨迹用于基础 RL。</p></article><article><span class=\"card-no\">02</span><h3>No-tool：探测内部能力</h3><p>关闭工具，采样 Gnt 条回答；它们用于判断边界和构造辅助目标。</p></article></div>",
+    "source": "[K] §4.1, Eq.4, Algorithm 1",
+    "notes": "两条路径由同一个当前策略产生，不需要更强的外部教师。WT/NT 判断是每题每步重新进行的有限采样估计。"
+  },
+  {
+    "paper": "AKBE",
+    "kind": "架构 (a) · 估计含义",
+    "title": "知识边界是随策略变化的采样估计",
+    "body": "<div class=\"formula compact\">KB(q, πθ) = NT</div><div class=\"cards\"><article><span class=\"card-no\">01</span><h3>观察到成功</h3><p>NT = 1：本轮至少存在一条正确无工具路径，为减少冗余调用提供证据。</p></article><article><span class=\"card-no\">02</span><h3>没有采到成功</h3><p>NT = 0：在本轮预算内未找到正确路径；可能是知识不足，也可能只是采样遗漏。</p></article><article><span class=\"card-no\">03</span><h3>下一步重新判断</h3><p>更新策略后重新双路径采样；同一道题可能从 Tool-dependent 转为 Efficiency。</p></article></div><p class=\"takeaway\">边界不是预先固定的题目难度标签，也不是一个独立的工具路由分类器。</p>",
+    "source": "[K] §4.1–4.3",
+    "notes": "论文将 KB=0 操作性解释为需要外部工具；讲解时保留有限采样限制，避免把它等同于绝对能力边界。"
   },
   {
     "paper": "AKBE",
@@ -185,11 +345,51 @@
   },
   {
     "paper": "AKBE",
+    "kind": "架构 (b) · 监督构造",
+    "title": "正确轨迹中，选择最合适的一条",
+    "body": "<figure><button class=\"figure-button\" data-image=\"assets/k-signals.png\" aria-label=\"放大图片：Figure 2(b) · Knowledge Boundary-guided Signal Construction\"><img src=\"assets/k-signals.png\" alt=\"Figure 2(b) · Knowledge Boundary-guided Signal Construction\"></button><figcaption>Figure 2(b) · Knowledge Boundary-guided Signal Construction · 点击放大</figcaption></figure><div class=\"cards\"><article><span class=\"card-no\">01</span><h3>保住必要工具</h3><p>只有 WT 成功：在答对的工具轨迹中选 TC 最小的一条；相同最小值随机打破并列。</p></article><article><span class=\"card-no\">02</span><h3>优先无工具成功</h3><p>只要 NT 成功，就随机选择一条正确无工具轨迹；若两边都失败则不选辅助目标。</p></article></div><p class=\"takeaway\">每题最多一个辅助目标，三类成功信号分别保护必要调用、减少冗余、纠正有害路径。</p>",
+    "source": "[K] §4.2, Algorithm 1",
+    "notes": ""
+  },
+  {
+    "paper": "AKBE",
+    "kind": "架构 (b) · 具体示例",
+    "title": "一次 batch，怎样产生不同监督？",
+    "body": "<div class=\"table-wrap\"><table><thead><tr><th>问题示例</th><th>工具路径：正确性 / 调用数</th><th>无工具路径</th><th>辅助选择</th></tr></thead><tbody><tr><td>q₁</td><td>正确/3；正确/1；错误/2</td><td>全部错误</td><td>选正确且调用 1 次的路径</td></tr><tr><td>q₂</td><td>至少一条正确</td><td>至少一条正确</td><td>随机选正确无工具路径</td></tr><tr><td>q₃</td><td>全部错误</td><td>至少一条正确</td><td>随机选正确无工具路径</td></tr><tr><td>q₄</td><td>全部错误</td><td>全部错误</td><td>跳过辅助目标</td></tr></tbody></table></div><p class=\"takeaway\">q₁ 的“最少 1 次”只在本轮采样候选中成立，并非证明全局最少。</p>",
+    "source": "[K] Algorithm 1 · q₁–q₄ 为依据规则构造的讲解示例",
+    "notes": "基础 RL 仍使用有工具采样数据，表中跳过只针对辅助监督，不是将 q₄ 从全部训练中删除。"
+  },
+  {
+    "paper": "AKBE",
     "kind": "训练目标",
     "title": "把成功行为，变成动态辅助监督",
     "body": "<div class=\"formula\" aria-label=\"总损失等于强化学习损失加权重乘辅助交叉熵损失\">L = L<sub>RL</sub> + λ L<sub>aux</sub></div><div class=\"cards\"><article><span class=\"card-no\">01</span><h3>基础 RL</h3><p>继续优化任务奖励；可与 GRPO、DAPO、GSPO 等组合。</p></article><article><span class=\"card-no\">02</span><h3>辅助交叉熵</h3><p>提高选中成功轨迹的概率，屏蔽工具观察 token。</p></article><article><span class=\"card-no\">03</span><h3>每步重新探测</h3><p>能力在变化，所需工具也在变化；监督不固定在旧检查点。</p></article></div>",
     "source": "[K] p.5 §4.3, Eqs.5–6",
     "notes": "该式采用最小化损失约定。额外无工具采样有训练开销；论文主要配置有工具 16 条、无工具 8 条，最大工具调用 6 次。"
+  },
+  {
+    "paper": "AKBE",
+    "kind": "架构 (c) · 联合训练",
+    "title": "两个损失，各自使用什么数据？",
+    "body": "<figure><button class=\"figure-button\" data-image=\"assets/k-training.png\" aria-label=\"放大图片：Figure 2(c) · Joint On-Policy Training Objective\"><img src=\"assets/k-training.png\" alt=\"Figure 2(c) · Joint On-Policy Training Objective\"></button><figcaption>Figure 2(c) · Joint On-Policy Training Objective · 点击放大</figcaption></figure><div class=\"formula compact\">Ltotal = LRL + λ LAKBE　　LAKBE = −Σq∈S log πθ(y*q | q)</div><div class=\"flow\"><span>有工具轨迹 → 基础 RL</span><b>→</b><span>选中成功轨迹 → 交叉熵</span><b>→</b><span>联合更新 πθ → πθ′</span><b>→</b><span>重新双路径探测</span></div>",
+    "source": "[K] §4.3, Eqs.5–6",
+    "notes": "S 是本轮有可靠信号的问题集合。交叉熵按生成动作 token 计算，观察 token 屏蔽；给定上下文中的工具观察仍可以作为输入。"
+  },
+  {
+    "paper": "AKBE",
+    "kind": "架构 (c) · 动态监督",
+    "title": "为什么静态成功轨迹不够？",
+    "body": "<div class=\"cards\"><article><span class=\"card-no\">01</span><h3>当前能力要匹配</h3><p>后期强策略能无工具答对的题，早期弱策略可能仍需搜索；固定后期数据可能过早抑制工具。</p></article><article><span class=\"card-no\">02</span><h3>在线重建目标</h3><p>每个训练步都用当前策略重新选择成功路径，辅助监督与能力边界同步变化。</p></article><article><span class=\"card-no\">03</span><h3>开销也要计算</h3><p>主要配置 Gwt = 16、Gnt = 8，最多 6 次工具调用；无工具采样没有检索等待，但仍消耗生成算力。</p></article></div><p class=\"takeaway\">On-policy 指监督来源随当前策略更新；不代表额外采样成本为零。</p>",
+    "source": "[K] §4.3, §5.2, Appendix A",
+    "notes": "Offline AKBE 从固定训练后策略生成监督。这里不额外展开讲稿要求跳过的 λ 扫描实验。"
+  },
+  {
+    "paper": "AKBE",
+    "kind": "实验设置",
+    "title": "同时衡量答案质量与工具效率",
+    "body": "<div class=\"table-wrap\"><table><thead><tr><th>维度</th><th>设置与指标</th></tr></thead><tbody><tr><td>环境 / 模型</td><td>Wikipedia 搜索；Qwen3-4B、Qwen2.5-7B</td></tr><tr><td>多跳 / 单跳</td><td>HotpotQA、2Wiki、MuSiQue、Bamboogle / NQ、TriviaQA、PopQA</td></tr><tr><td>质量与调用</td><td>EM：答案精确匹配；TC：每题平均工具调用次数</td></tr><tr><td>工具生产率</td><td>TP = 正确答案数 / 总工具调用数；按论文表格缩放报告</td></tr></tbody></table></div><p class=\"takeaway\">TP 变高也可能伴随 EM 下降，因此必须联合比较 EM 与 TC。</p>",
+    "source": "[K] §5.1, Table 1",
+    "notes": "基线包括 ReAct、Search-o1、R1-Searcher、Search-R1、OTC-PO、β-GRPO 和 Offline AKBE。静态比较验证动态信号构造的必要性。"
   },
   {
     "paper": "AKBE",
@@ -206,6 +406,14 @@
     "body": "<div class=\"table-wrap\"><table><thead><tr><th>Qwen3 4B · 多跳</th><th>EM</th><th>工具调用</th></tr></thead><tbody><tr><td>基础 GRPO</td><td>45.40</td><td>3.16</td></tr><tr><td>完整 AKBE</td><td>46.86</td><td>2.60</td></tr><tr><td>去掉 Tool-dependent 信号</td><td>43.56</td><td>2.15</td></tr><tr><td>去掉 Efficiency 信号</td><td>46.50</td><td>2.92</td></tr></tbody></table></div><p class=\"takeaway\">必要调用的保护信号不可少：调用降到 2.15，准确率反而低于基线。</p><p class=\"small\">采用 Table 3 的表内口径；完整 AKBE 的 EM 与主表 46.82 有小幅差异。</p>",
     "source": "[K] p.7 Table 3",
     "notes": "Efficiency 信号主要减少冗余；Hallucination 信号用于纠正有害路径。OTC-PO 也可能有更低调用和更高 TP，但伴随准确率损失，因此不能只按调用数排序。"
+  },
+  {
+    "paper": "AKBE",
+    "kind": "实验分析 · 可组合性",
+    "title": "辅助监督可与多种基础 RL 组合",
+    "body": "<div class=\"table-wrap\"><table><thead><tr><th>Qwen3-4B · 多跳</th><th>EM：基础 → +AKBE</th><th>TC：基础 → +AKBE</th></tr></thead><tbody><tr><td>GRPO</td><td>45.40 → 46.82</td><td>3.16 → 2.60</td></tr><tr><td>DAPO</td><td>46.65 → 47.01</td><td>2.61 → 2.38</td></tr><tr><td>GSPO</td><td>45.69 → 46.24</td><td>3.23 → 2.84</td></tr><tr><td>AEPO</td><td>46.96 → 47.50</td><td>3.08 → 2.73</td></tr></tbody></table></div><p class=\"takeaway\">不改写任务奖励：在已测试的基础算法上，辅助项提供互补信号。</p>",
+    "source": "[K] §5.3.1, Table 2",
+    "notes": "结果支持所测试搜索问答设置中的可组合性；不据此宣称任意环境、任意优化器都能获得相同改善。"
   },
   {
     "paper": "AKBE",

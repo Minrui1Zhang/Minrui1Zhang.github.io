@@ -11,7 +11,7 @@ function sync(index){
  counter.textContent=`${String(current+1).padStart(2,'0')} / ${slides.length}`;
  document.querySelector('#progress').style.width=`${(current+1)/slides.length*100}%`;
  previous.disabled=current===0;next.disabled=current===slides.length-1;
- document.querySelectorAll('nav a').forEach((a,i)=>{const active=i=== (current<9?0:current<19?1:current<28?2:-1);a.classList.toggle('active',active);if(active)a.setAttribute('aria-current','true');else a.removeAttribute('aria-current')});
+ document.querySelectorAll('nav a').forEach(a=>{const target=document.querySelector(a.hash);const active=Boolean(target && target.dataset.paper===slides[current].dataset.paper);a.classList.toggle('active',active);if(active)a.setAttribute('aria-current','true');else a.removeAttribute('aria-current')});
  if(location.hash!==`#slide-${current+1}`)history.replaceState(null,'',`#slide-${current+1}`);
 }
 function go(index){index=Math.max(0,Math.min(slides.length-1,index));sync(index);deck.scrollTo({top:slides[index].offsetTop,behavior:'instant'});}
