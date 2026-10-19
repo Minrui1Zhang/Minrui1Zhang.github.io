@@ -28,9 +28,9 @@ git push -u origin main
 ## Personalization checklist
 
 - **Chinese name:** Not supplied. Currently displays the verified romanized name "Minrui Zhang" to avoid inventing Chinese characters. Add your Chinese name to the header/hero if desired.
-- **Portrait:** Replace `assets/profile.svg` with `assets/profile.jpg` (or `.png`) and update the `src` path in `index.html`. A neutral placeholder is deliberately used instead of assuming permission to use your GitHub avatar.
+- **Portrait:** User-provided photograph in `assets/profile.jpg`.
 - **Email:** Add an academic email address to hero/contact once you wish to publish it. No email has been guessed.
-- **Undergraduate program:** The bachelor's department/major was not supplied, so only USTC is listed.
+- **Undergraduate program:** USTC · School of Artificial Intelligence and Data Science.
 - **Dates:** Education dates listed as Sep 2022–Jun 2026 and Sep 2026–present, based on prior shared academic context. Verify before publication.
 - **Research areas:** The focus areas are worded as *interests*, not claims of published contributions.
 - **Publications / internships:** Omitted; add sections later when applicable.
@@ -41,7 +41,7 @@ git push -u origin main
 - `index.html`: webpage and content
 - `styles.css`: responsive visual theme
 - `script.js`: bilingual text and reading progress indicator
-- `assets/profile.svg`: geometric placeholder illustration
+- `assets/profile.jpg`: personal photograph
 - `assets/favicon.svg`: favicon
 
 No paid hosting, server or JavaScript framework required.
