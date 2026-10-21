@@ -16,7 +16,7 @@ function sync(index){
 }
 function go(index){index=Math.max(0,Math.min(slides.length-1,index));sync(index);deck.scrollTo({top:slides[index].offsetTop,behavior:'instant'});}
 let pending=false;
-deck.addEventListener('scroll',()=>{if(pending)return;pending=true;requestAnimationFrame(()=>{const y=deck.scrollTop+Math.min(deck.clientHeight*.35,200);let index=0;slides.forEach((s,i)=>{if(s.offsetTop<=y)index=i});sync(index);pending=false})},{passive:true});
+deck.addEventListener('scroll',()=>{if(pending)return;pending=true;requestAnimationFrame(()=>{const y=deck.scrollTop+2;let index=0;slides.forEach((s,i)=>{if(s.offsetTop<=y)index=i});sync(index);pending=false})},{passive:true});
 previous.addEventListener('click',()=>go(current-1));next.addEventListener('click',()=>go(current+1));
 document.querySelectorAll('nav a').forEach(a=>a.addEventListener('click',e=>{e.preventDefault();go(Number(a.hash.replace('#slide-',''))-1)}));
 document.querySelector('.toc-grid').innerHTML=slides.map((s,i)=>`<a href="#slide-${i+1}"><span>${String(i+1).padStart(2,'0')}</span>${s.querySelector('h1').textContent}</a>`).join('');
